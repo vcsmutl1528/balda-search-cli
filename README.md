@@ -1,6 +1,6 @@
 # balda-search-cli
 
-Platforms: Android (Termux), Windows (CLI).
+Platforms: Android (Termux), Linux, Windows (CLI).
 
 Binary:<br>
 `nuget install balda-search-cli`<br>
