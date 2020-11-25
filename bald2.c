@@ -5,7 +5,7 @@
 #endif
 #else
 #ifdef NDEBUG
-#error NDEBUG and _DEBUG are uncompatible
+#error NDEBUG and _DEBUG are incompatible
 #endif
 #endif
 
@@ -27,6 +27,7 @@
 #define FIELD_SZ	10
 #define DEF_FIELD_SZ 5
 #define MAX_WORD_SZ	20
+#define MAX_WORDS_COUNT	200
 
 #define WUSED_SZ	1024
 #define WORDS_SZ	4096
@@ -40,7 +41,11 @@
 #endif
 
 #if defined(__x86_64__) || defined(_WIN64)
+#ifdef _WIN64
+#define FMT_LMDF_64 "ll"
+#else
 #define FMT_LMDF_64 "l"
+#endif
 #else
 #define FMT_LMDF_64
 #endif
@@ -83,6 +88,7 @@ struct sqvec {
 };
 
 static const char s_digs[] = "0123456789";
+static const char s_spc [] = " \t";
 static const char null_s[] = "";
 
 int valid_cell (int x, int y);
@@ -279,16 +285,36 @@ ln_fmt:
 			goto nx_ch;
 		}
 		if (s > 1 && (buf [0] == '?' || buf [0] == '/')) {
-			char c;
+			char c, *pc, d;
+			if (pc = strchr (&buf [1], ' '), pc) {
+				n = pc - buf - 1;
+				pc += strspn (pc, s_spc);
+				if (isalldigits (pc, s - (pc - buf))) {
+					d = atoi (pc);
+					strncpy (buf2, &buf[1], n);
+					buf2 [n] = '\0';
+					s = n;
+					goto dist_find;
+				}
+			}
 			if (strpbrk (&buf[1], s_digs) == NULL) {
-				n = 0;
-				memset (&fws, 0, sizeof (fws));
-				strcpy (buf2, &buf[1]); s--;
+				char f_exact;
+				strcpy (buf2, &buf[1]);
+				s--; d = 1;
+dist_find:
+				n = 0; f_exact = 0;
 				for (i = 0; i < dic_l; i += strlen (&dic[i]) + 1) {
-					j = levdamdist (buf2, s, &dic[i], strlen (&dic[i]));
-					if (j > 1)
+					if (d > 0) {
+						j = levdamdist (buf2, s, &dic[i], strlen (&dic[i]));
+						if (j > d)
+							continue;
+						if (j == 0) f_exact = 1;
+					} else	if (strcmp (buf2, &dic [i]) != 0)
 						continue;
+					else f_exact = 1;
 					n++;
+					if (n > MAX_WORDS_COUNT)
+						goto dist_find_e;
 #ifdef __linux__
 					uprint (&dic[i]);
 					if (j == 0) {
@@ -304,6 +330,11 @@ ln_fmt:
 					else printf ("%s\n", buf);
 #endif
 				}
+dist_find_e:
+				if (n > MAX_WORDS_COUNT) {
+					fwrite (msgs [34], strlen (msgs [34]), 1, stdout);
+					n--;
+				}
 #ifdef LANG_RU
 				if (n > 0)
 					printf (msgs [14], n);
@@ -314,6 +345,9 @@ ln_fmt:
 				else fwrite (msgs [14], strlen (msgs [14]), 1, stdout);
 				puts (msgs [15]);
 #endif
+				fwrite (msgs [35], strlen (msgs [35]), 1, stdout);
+				if (f_exact) puts (msgs [36]);
+				else	puts (msgs [37]);
 				goto nx_ch;
 			}
 			if (s > 4 || s < 3) goto ln_fmt;
@@ -321,14 +355,16 @@ ln_fmt:
 			i = atoi (cz) - 1;
 			cz [0] = buf [s == 3 ? 2 : 3];
 			j = atoi (cz) - 1;
-			if (i < 0 || i >= FIELD_SZ) {
+			if (i < -1 || i >= FIELD_SZ) {
 				puts (msgs [21]);
 				goto ln_fmt;
 			}
-			if (j < 0 || j >= FIELD_SZ) {
+			if (j < -1 || j >= FIELD_SZ) {
 				puts (msgs [22]);
 				goto ln_fmt;
 			}
+			if (i == -1) i = 9;
+			if (j == -1) j = 9;
 			n = 0;
 			if (s == 4) c = buf [1];
 			else	c = 0;
@@ -392,6 +428,14 @@ ln_fmt:
 #endif
 			goto nx_ch;
 		}
+		if (buf [0] == '+' && buf[1] != '\0') {
+			if (pwused - wused + s - 1 < WUSED_SZ) {
+				strcpy (pwused, &buf[1]);
+				pwused += s;
+			} else
+				puts (msgs [27]);
+			goto nx_ch;
+		}
 		if (isalldigits (buf, s)) {
 			int vn;
 
@@ -424,16 +468,18 @@ ln_fmt:
 			i = atoi (cz) - 1;
 			cz [0] = buf [2];
 			j = atoi (cz) - 1;
-			if (i < 0 || i >= FIELD_SZ) {
+			if (i < -1 || i >= FIELD_SZ) {
 				puts (msgs [21]);
 				goto ch_fmt;
 			}
-			if (j < 0 || j >= FIELD_SZ) {
+			if (j < -1 || j >= FIELD_SZ) {
 				puts (msgs [22]);
 ch_fmt:
 				puts (msgs [25]);
 				goto nx_ch;
 			}
+			if (i == -1) i = 9;
+			if (j == -1) j = 9;
 			if (buf [0] == '.')
 				buf [0] = 0;
 			field [j][i] = buf [0];
@@ -787,7 +833,7 @@ void print_words (void)
 #endif
 	}
 #ifdef _DEBUG
-	printf ("DBG: words: %dB remain\n", (unsigned)(WORDS_SZ - sizeof (struct widx_s) * nwords -
+	printf ("DBG: words: %uB remain\n", (unsigned)(WORDS_SZ - sizeof (struct widx_s) * nwords -
 		(pwords - words)));
 #endif
 }
@@ -850,9 +896,12 @@ char *strupper (char *str)
 #ifdef __linux__
 	int i, l = strlen (str);
 	unsigned char *s = (unsigned char*)str;
-	for (i = 0; i < l; i++)
+	for (i = 0; i < l; i++) {
 		if (s [i] >= A_CYRA_SML && s [i] <= A_CYRYA_SML)
 			s [i] += A_CYRA_CAP - A_CYRA_SML;
+		else if (s [i] <= 0x7f)
+			s [i] = toupper (s [i]);
+	}
 	return (char*)s;
 #else
 	return strupr (str);
@@ -969,7 +1018,8 @@ void uprint (const char *str)
 	wbuf [l] = '\0';
 	sl = wcstombs (buf, wbuf, sizeof (buf)-1);
 	buf [sizeof (buf) - 1] = '\0';
-	fwrite (buf, sl, 1, stdout);
+	if (sl != -1)
+		fwrite (buf, sl, 1, stdout);
 }
 #endif
 
@@ -1021,7 +1071,11 @@ const char *msgs[] = {
 "\t+<word>",
 "The word can't be placed on field.",
 "Enter variant number:",
-"(exact)"
+"(exact)",
+"More than ",
+"Exact match",		// 35
+" found.",
+" not found."
 };
 
 #else
@@ -1069,7 +1123,11 @@ const char *msgs[] = {
 "–Ω–æ–º–µ—Ä –≤–∞—Ä–∏–∞–Ω—Ç–∞ –∏–∑ —Å–ø–∏—Å–∫–∞ –ø—Ä–µ–¥–ª–æ–∂–µ–Ω–Ω—ã—Ö.",
 "–°–ª–æ–≤–æ –Ω–µ–≤–æ–∑–º–æ–∂–Ω–æ —Ä–∞–∑–º–µ—Å—Ç–∏—Ç—å –Ω–∞ –ø–æ–ª–µ.",
 "–í–≤–µ–¥–∏—Ç–µ –Ω–æ–º–µ—Ä –≤–∞—Ä–∏–∞–Ω—Ç–∞:",
-"(—Ç–æ—á–Ω–æ)"
+"(—Ç–æ—á–Ω–æ)",
+"–ë–æ–ª–µ–µ —á–µ–º ",
+"–¢–æ—á–Ω–æ–µ —Å–æ–≤–ø–∞–¥–µ–Ω–∏–µ",
+" –Ω–∞–π–¥–µ–Ω–æ.",
+" –Ω–µ –Ω–∞–π–¥–µ–Ω–æ."
 };
 
 #else
@@ -1115,7 +1173,11 @@ const char *msgs[] = {
 "≠Æ¨•‡ ¢†‡®†≠‚† ®ß ·Ø®·™† Ø‡•§´Æ¶•≠≠ÎÂ.",
 "ë´Æ¢Æ ≠•¢Æß¨Æ¶≠Æ ‡†ß¨•·‚®‚Ï ≠† ØÆ´•.",
 "Ç¢•§®‚• ≠Æ¨•‡ ¢†‡®†≠‚†:",
-"(‚ÆÁ≠Æ)"
+"(‚ÆÁ≠Æ)",
+"ÅÆ´•• Á•¨ ",
+"íÆÁ≠Æ• ·Æ¢Ø†§•≠®•",
+" ≠†©§•≠Æ.",
+" ≠• ≠†©§•≠Æ."
 };
 
 #endif
