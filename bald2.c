@@ -100,7 +100,7 @@ struct findw_s {
 	signed char lc, subc, subx, suby, ax, ay, f_lt_n;
 };
 
-const char *find_word (struct findw_s *pfws);
+const char *find_word (struct findw_s *pf);
 void init_words (void);
 int add_word (const struct findw_s *pfws);
 void print_words (void);
@@ -580,7 +580,7 @@ unsigned input (const char *prompt)
 	unsigned l;
 
 	puts (prompt);
-	fgets (buf, INPUT_BUF_SZ-1, stdin);
+	(void)fgets (buf, INPUT_BUF_SZ-1, stdin);
 	buf [INPUT_BUF_SZ - 1] = '\0';
 	l = strlen (buf);
 	if (buf [l-1] == '\n')
@@ -594,83 +594,90 @@ int isalldigits (const char *s, int sl)
 		(sl != -1 ? sl : strlen (s));
 }
 
-const char *find_word (struct findw_s *pfws)
+const char *find_word (struct findw_s *pf)
 {
 	int d;
 
-	if (pfws->dic == NULL) {
-		pfws->dic = dic;
-		pfws->dicl = dic_l;
+	if (pf->dic == NULL) {
+		pf->dic = dic;
+		pf->dicl = dic_l;
 	}
-	if (pfws->f_lt_n)
-		goto dir_bk2;
-	for (; pfws->j < szy; pfws->j++, pfws->i = 0)
-	for (; pfws->i < szx; pfws->i++) {
-		if (!field [pfws->j][pfws->i]) {
+	if (pf->f_lt_n)
+		goto lt_bk3;
+	memset (mark_field, 0, sizeof (mark_field));
+	for (; pf->j < szy; pf->j++)
+	for (pf->i = 0; pf->i < szx; pf->i++) {
+		if (!field [pf->j][pf->i]) {
+			pf->f_lt_n = 0;
 			for (d = 0; d < 4; d++) {
-				pfws->ax = pfws->i + sqdir [d].dx;
-				pfws->ay = pfws->j + sqdir [d].dy;
-				if (valid_cell (pfws->ax, pfws->ay) &&
-						field [pfws->ay][pfws->ax] != 0) {
-					pfws->f_lt_n = 1;
+				pf->ax = pf->i + sqdir [d].dx;
+				pf->ay = pf->j + sqdir [d].dy;
+				if (valid_cell (pf->ax, pf->ay) &&
+						field [pf->ay][pf->ax] != 0) {
+					pf->f_lt_n = 1;
 					break;
 				}
 			}
-			if (!pfws->f_lt_n) continue;
+			if (!pf->f_lt_n)
+				continue;
 		} else
-			pfws->f_lt_n = 1;
-		pfws->w = 0;
-		for (pfws->s = 0; pfws->s < pfws->dicl; pfws->s++, pfws->lc++) {
-			if (pfws->w == pfws->s) {
-				pfws->ax = pfws->i;
-				pfws->ay = pfws->j;
-				pfws->subc = 0;
-				pfws->lc = 0;
+			pf->f_lt_n = 1;
+		pf->w = 0;
+		for (pf->s = 0; pf->s < pf->dicl; pf->s++, pf->lc++) {
+			if (pf->dic [pf->s] == '\0') {
+				pf->w = pf->s + 1;
+				continue;
 			}
-			if (pfws->lc >= MAX_WORD_SZ) goto nx_word;
-			if (field [pfws->ay][pfws->ax] == 0) {
-				if (pfws->subc == 0) {
-					pfws->subc = pfws->dic [pfws->s];
-					pfws->subx = pfws->ax;
-					pfws->suby = pfws->ay;
-				} else goto dir_bk3;
-			} else if (field [pfws->ay][pfws->ax] != pfws->dic [pfws->s])
-				goto dir_bk3;
-			dirv [pfws->lc] = 0;
-			mark_field [pfws->ay][pfws->ax] = 1;
+			if (pf->s == pf->w) {
+				pf->ax = pf->i;
+				pf->ay = pf->j;
+				pf->subc = 0;
+				pf->lc = 0;
+			}
+			if (field [pf->ay][pf->ax] == 0) {
+				if (pf->subc == 0) {
+					pf->subc = pf->dic [pf->s];
+					pf->subx = pf->ax;
+					pf->suby = pf->ay;
+				} else goto lt_bk2;
+			} else if (field [pf->ay][pf->ax] != pf->dic [pf->s])
+				goto lt_bk2;
+			if (pf->dic [pf->s + 1] == '\0') {
+				if (pf->subc != 0)
+					return &pf->dic [pf->w];
+				goto lt_bk2;
+			}
+			if (pf->lc >= MAX_WORD_SZ)
+				goto lt_bk2;
+			mark_field [pf->ay][pf->ax] = 1;
+			dirv [pf->lc] = 0;
 			goto nx_lt;
-dir_bk2:
-			mark_field [pfws->ay][pfws->ax] = 0;
-			if (field [pfws->ay][pfws->ax] == 0)
-				pfws->subc = 0;
-dir_bk3:
-			pfws->s--;
-			pfws->lc--;
-			if (pfws->lc < 0) {
-nx_word:
-				pfws->s += strlen (&pfws->dic [pfws->s+1]) + 1;
-				pfws->w = pfws->s + 1;
+lt_bk:
+			mark_field [pf->ay][pf->ax] = 0;
+lt_bk3:
+			if (field [pf->ay][pf->ax] == 0)
+				pf->subc = 0;
+lt_bk2:
+			pf->s --;
+			pf->lc --;
+			if (pf->lc < 0) {
+				pf->s += strlen (&pf->dic [pf->s+1]) + 1;
+				pf->w = pf->s + 1;
 				continue;
 			}
 dir_bk:
-			pfws->ax -= sqdir [dirv [pfws->lc]].dx;
-			pfws->ay -= sqdir [dirv [pfws->lc]].dy;
-			dirv [pfws->lc] ++;
-			if (dirv [pfws->lc] >= 4)
-				goto dir_bk2;
+			pf->ax -= sqdir [dirv [pf->lc]].dx;
+			pf->ay -= sqdir [dirv [pf->lc]].dy;
+			dirv [pf->lc] ++;
+			if (dirv [pf->lc] >= 4)
+				goto lt_bk;
 nx_lt:
-			if (pfws->dic [pfws->s + 1] == '\0') {
-				if (pfws->subc != 0)
-					return &pfws->dic [pfws->w];
-				goto dir_bk2;
-			}
-			pfws->ax += sqdir [dirv [pfws->lc]].dx;
-			pfws->ay += sqdir [dirv [pfws->lc]].dy;
-			if (!valid_cell (pfws->ax, pfws->ay) ||
-					mark_field [pfws->ay][pfws->ax] == 1)
+			pf->ax += sqdir [dirv [pf->lc]].dx;
+			pf->ay += sqdir [dirv [pf->lc]].dy;
+			if (!valid_cell (pf->ax, pf->ay) ||
+					mark_field [pf->ay][pf->ax] != 0)
 				goto dir_bk;
 		}
-		pfws->f_lt_n = 0;
 	}
 	return NULL;
 }
